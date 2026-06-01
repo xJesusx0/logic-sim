@@ -1,4 +1,5 @@
 import { Component, ChangeDetectionStrategy, inject, signal, computed } from '@angular/core';
+import { DragDropModule, CdkDragDrop, CdkDragMove } from '@angular/cdk/drag-drop';
 import { SimulatorService } from '../../services/simulator.service';
 import { GateComponent } from '../gate/gate.component';
 import { WireComponent } from '../wire/wire.component';
@@ -8,13 +9,15 @@ import { CircuitElement, Wire, Pin } from '../../../core';
   selector: 'app-board',
   standalone: true,
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [GateComponent, WireComponent],
+  imports: [GateComponent, WireComponent, DragDropModule],
   template: `
     <svg 
       class="board" 
       (mousemove)="onMouseMove($event)" 
       (mouseup)="onMouseUp($event)"
-      (mouseleave)="onMouseUp($event)">
+      (mouseleave)="onMouseUp($event)"
+      cdkDropListSortingDisabled="true"
+      cdkDropList>
       
       <defs>
         <pattern id="grid" width="20" height="20" patternUnits="userSpaceOnUse">
@@ -33,12 +36,17 @@ import { CircuitElement, Wire, Pin } from '../../../core';
       }
 
       @for (el of elements(); track el.id) {
-        <svg:g app-gate 
+        <svg:g 
+          app-gate 
           [element]="el" 
           [tick]="tick()"
-          (dragStart)="startDrag($event.event, el)"
           (pinDown)="startWire($event.pin)"
-          (pinUp)="finishWire($event.pin)">
+          (pinUp)="finishWire($event.pin)"
+          cdkDrag
+          [cdkDragData]="el"
+          (cdkDragStarted)="onCdkDragStarted($any($event))"
+          (cdkDragMoved)="onCdkDragMoved($any($event))"
+          (cdkDragEnded)="onCdkDragEnded()">
         </svg:g>
       }
     </svg>
@@ -70,6 +78,8 @@ export class BoardComponent {
   drawingWire = signal<Wire | null>(null);
   private startDrawingPin: Pin | null = null;
   private currentMousePos = signal<{x: number, y: number}>({x:0, y:0});
+
+  private svgElement: SVGSVGElement | null = null;
 
   private getPinAbsolutePosition(pinId: string): { x: number, y: number } {
     const elements = this.elements();
@@ -137,19 +147,34 @@ export class BoardComponent {
     return {x: e.clientX, y: e.clientY};
   }
 
-  startDrag(e: MouseEvent, el: CircuitElement) {
-    if (el.type === 'INPUT' && e.detail === 2) {
-      this.simulator.toggleInput(el.id);
-      return;
-    }
-    
-    const svgP = this.getMouseSVGPoint(e as unknown as MouseEvent & { currentTarget: SVGSVGElement });
+  onCdkDragStarted(event: any) {
+    const el = event.source.data as CircuitElement;
     this.draggingElement.set(el);
     const pos = el.position || {x:0, y:0};
     this.dragOffset = {
-      x: svgP.x - pos.x,
-      y: svgP.y - pos.y
+      x: pos.x,
+      y: pos.y
     };
+  }
+
+  onCdkDragMoved(event: any) {
+    const el = this.draggingElement();
+    if (!el) return;
+    
+    const source = event.source;
+    const dragRef = source._dragRef;
+    const transform = dragRef._activeTransform;
+    
+    if (transform) {
+      el.position = {
+        x: this.dragOffset.x + transform.x,
+        y: this.dragOffset.y + transform.y
+      };
+    }
+  }
+
+  onCdkDragEnded() {
+    this.draggingElement.set(null);
   }
 
   startWire(pin: Pin) {
@@ -184,15 +209,6 @@ export class BoardComponent {
   }
 
   onMouseMove(e: MouseEvent) {
-    const dragging = this.draggingElement();
-    if (dragging) {
-      const svgP = this.getMouseSVGPoint(e);
-      dragging.position = {
-        x: svgP.x - this.dragOffset.x,
-        y: svgP.y - this.dragOffset.y
-      };
-    }
-    
     if (this.startDrawingPin) {
       const svgP = this.getMouseSVGPoint(e);
       this.currentMousePos.set(svgP);

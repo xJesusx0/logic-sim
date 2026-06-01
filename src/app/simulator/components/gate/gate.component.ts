@@ -8,7 +8,7 @@ import { CircuitElement, Pin, LogicGate, LOGIC_COLORS } from '../../../core';
   changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [PinComponent],
   template: `
-    <svg:g [attr.transform]="transform()" (mousedown)="onDragStart($event)" class="gate-group">
+    <svg:g [attr.transform]="transform()" class="gate-group">
       @if (isIO()) {
         <svg:rect x="0" y="0" width="40" height="40" rx="4" [attr.fill]="background()" stroke="#4b5563" stroke-width="2"/>
         <svg:text x="20" y="25" text-anchor="middle" font-family="Inter" font-size="12" font-weight="bold" fill="#374151">
@@ -53,7 +53,6 @@ export class GateComponent {
   
   pinDown = output<{event: MouseEvent, pin: Pin}>();
   pinUp = output<{event: MouseEvent, pin: Pin}>();
-  dragStart = output<{event: MouseEvent, element: CircuitElement}>();
 
   inputs = computed(() => this.element().inputs);
   outputs = computed(() => this.element().outputs);
@@ -96,17 +95,12 @@ export class GateComponent {
   getPinTransform(dir: 'IN'|'OUT', index: number, total: number) {
     const isIO = this.isIO();
     const height = 40; 
-    const width = isIO ? 40 : 60; // offset based on bounding box
+    const width = isIO ? 40 : 60;
     
     const spacing = height / (total + 1);
     const y = spacing * (index + 1);
     const x = dir === 'IN' ? 0 : width;
     
     return `translate(${x}, ${y})`;
-  }
-
-  onDragStart(e: MouseEvent) {
-    e.stopPropagation();
-    this.dragStart.emit({event: e, element: this.element()});
   }
 }
