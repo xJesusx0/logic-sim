@@ -201,3 +201,156 @@
 * {
   box-sizing: border-box;
 }
+
+// ─── Responsive: Mobile ───────────────────────────────────────────
+
+.btn-label {
+  // Siempre visible en desktop
+}
+
+.bottom-palette {
+  display: none; // oculta en desktop
+}
+
+@media (max-width: 768px) {
+  
+  .top-bar {
+    height: 52px;
+    padding: 0 16px;
+
+    .logo h1 {
+      font-size: 1.1rem;
+    }
+  }
+
+  .controls {
+    gap: 8px;
+  }
+
+  .btn {
+    padding: 7px 10px;
+    font-size: 0.8rem;
+    gap: 4px;
+
+    // Ocultar labels en pantallas muy pequeñas
+    .btn-label {
+      display: none;
+    }
+  }
+
+  .workspace {
+    flex-direction: column;
+  }
+
+  // Ocultar sidebar en móvil
+  .desktop-palette {
+    display: none;
+  }
+
+  .main-area {
+    flex: 1;
+    margin: 8px 8px 0 8px;
+    border-radius: 12px;
+    // Dejar espacio para la bottom palette
+    margin-bottom: 0;
+  }
+
+  // Bottom palette visible en móvil
+  .bottom-palette {
+    display: block;
+    height: 80px;
+    margin: 8px;
+    border-radius: 12px;
+    overflow: hidden;
+    flex-shrink: 0;
+
+    .bottom-palette-scroll {
+      display: flex;
+      flex-direction: row;
+      align-items: center;
+      gap: 8px;
+      padding: 0 12px;
+      height: 100%;
+      overflow-x: auto;
+      overflow-y: hidden;
+      scroll-snap-type: x mandatory;
+      -webkit-overflow-scrolling: touch;
+
+      // Ocultar scrollbar pero mantener funcionalidad
+      scrollbar-width: none;
+      &::-webkit-scrollbar { display: none; }
+    }
+  }
+
+  .palette-item-mobile {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 4px;
+    padding: 8px 12px;
+    background: rgba(255, 255, 255, 0.6);
+    border-radius: 8px;
+    cursor: grab;
+    min-width: 64px;
+    flex-shrink: 0;
+    scroll-snap-align: start;
+    transition: all 0.2s ease;
+    border: 1px solid transparent;
+    touch-action: none; // importante para drag en touch
+
+    &:active {
+      background: white;
+      transform: scale(0.95);
+    }
+
+    span {
+      font-size: 0.7rem;
+      font-weight: 500;
+      color: var(--text-dark);
+      white-space: nowrap;
+      pointer-events: none;
+    }
+
+    .icon {
+      width: 24px;
+      height: 24px;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      pointer-events: none;
+
+      .dot {
+        width: 14px;
+        height: 14px;
+        border-radius: 50%;
+        &.input  { background: #4299e1; }
+        &.output { background: #f6e05e; }
+      }
+
+      .shape {
+        width: 18px;
+        height: 16px;
+        background: #a0aec0;
+        border-radius: 3px 8px 8px 3px;
+        &.gate { background: #667eea; }
+      }
+    }
+  }
+}
+
+// Pantallas muy pequeñas (< 380px)
+@media (max-width: 380px) {
+  .top-bar {
+    height: 48px;
+    padding: 0 12px;
+  }
+
+  .main-area {
+    margin: 6px 6px 0 6px;
+  }
+
+  .bottom-palette {
+    height: 72px;
+    margin: 6px;
+  }
+}
