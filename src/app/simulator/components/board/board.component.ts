@@ -182,6 +182,14 @@ export class BoardComponent {
   }
 
   onCdkDragEnded() {
+    const el = this.draggingElement();
+    if (el) {
+      const pos = el.position || {x:0, y:0};
+      this.dragOffset = {
+        x: pos.x,
+        y: pos.y
+      };
+    }
     this.draggingElement.set(null);
   }
 
