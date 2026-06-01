@@ -42,6 +42,7 @@ import { CircuitElement, Wire, Pin } from '../../../core';
           [tick]="tick()"
           (pinDown)="startWire($event.pin)"
           (pinUp)="finishWire($event.pin)"
+          (dblclick)="onGateDoubleClick($event, el)"
           cdkDrag
           [cdkDragData]="el"
           (cdkDragStarted)="onCdkDragStarted($any($event))"
@@ -155,6 +156,13 @@ export class BoardComponent {
       x: pos.x,
       y: pos.y
     };
+  }
+
+  onGateDoubleClick(e: MouseEvent, el: CircuitElement) {
+    if (el.type === 'INPUT') {
+      e.stopPropagation();
+      this.simulator.toggleInput(el.id);
+    }
   }
 
   onCdkDragMoved(event: any) {
