@@ -51,8 +51,8 @@ export class GateComponent {
   element = input.required<CircuitElement>();
   tick = input<number>(0);
   
-  pinDown = output<{event: MouseEvent, pin: Pin}>();
-  pinUp = output<{event: MouseEvent, pin: Pin}>();
+  pinDown = output<{event: MouseEvent | TouchEvent, pin: Pin}>();
+  pinUp = output<{event: MouseEvent | TouchEvent, pin: Pin}>();
 
   inputs = computed(() => this.element().inputs);
   outputs = computed(() => this.element().outputs);

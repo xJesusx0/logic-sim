@@ -1,4 +1,4 @@
-import { Component, ChangeDetectionStrategy, inject, signal, computed } from '@angular/core';
+import { Component, ChangeDetectionStrategy, inject, signal, computed, ElementRef } from '@angular/core';
 import { DragDropModule, CdkDragDrop, CdkDragMove } from '@angular/cdk/drag-drop';
 import { SimulatorService } from '../../services/simulator.service';
 import { GateComponent } from '../gate/gate.component';
@@ -7,7 +7,6 @@ import { CircuitElement, Wire, Pin } from '../../../core';
 
 @Component({
   selector: 'app-board',
-  standalone: true,
   changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [GateComponent, WireComponent, DragDropModule],
   template: `
@@ -16,6 +15,9 @@ import { CircuitElement, Wire, Pin } from '../../../core';
       (mousemove)="onMouseMove($event)" 
       (mouseup)="onMouseUp($event)"
       (mouseleave)="onMouseUp($event)"
+      (touchmove)="onTouchMove($event)"
+      (touchend)="onTouchEnd($event)"
+      (touchcancel)="onTouchCancel()"
       cdkDropListSortingDisabled="true"
       cdkDropList>
       
@@ -68,6 +70,7 @@ import { CircuitElement, Wire, Pin } from '../../../core';
 })
 export class BoardComponent {
   private simulator = inject(SimulatorService);
+  private hostEl = inject(ElementRef);
 
   elements = this.simulator.elements;
   wires = this.simulator.wires;
@@ -81,6 +84,16 @@ export class BoardComponent {
   private currentMousePos = signal<{x: number, y: number}>({x:0, y:0});
 
   private svgElement: SVGSVGElement | null = null;
+
+  /** Map de pinId -> Pin para buscar pins por su ID cuando un touch termina */
+  private pinMap = computed(() => {
+    const map = new Map<string, Pin>();
+    for (const el of this.elements()) {
+      for (const p of el.inputs) map.set(p.id, p);
+      for (const p of el.outputs) map.set(p.id, p);
+    }
+    return map;
+  });
 
   private getPinAbsolutePosition(pinId: string): { x: number, y: number } {
     const elements = this.elements();
@@ -146,6 +159,30 @@ export class BoardComponent {
       return {x: svgP.x, y: svgP.y};
     }
     return {x: e.clientX, y: e.clientY};
+  }
+
+  /** Converts touch client coordinates to SVG coordinates */
+  private getTouchSVGPoint(clientX: number, clientY: number): {x: number, y: number} {
+    const svgEl = this.getSvgElement();
+    if (!svgEl) return {x: clientX, y: clientY};
+
+    const pt = svgEl.createSVGPoint();
+    pt.x = clientX;
+    pt.y = clientY;
+    
+    const ctm = svgEl.getScreenCTM();
+    if (ctm) {
+      const svgP = pt.matrixTransform(ctm.inverse());
+      return {x: svgP.x, y: svgP.y};
+    }
+    return {x: clientX, y: clientY};
+  }
+
+  private getSvgElement(): SVGSVGElement | null {
+    if (!this.svgElement) {
+      this.svgElement = this.hostEl.nativeElement.querySelector('svg.board');
+    }
+    return this.svgElement;
   }
 
   onCdkDragStarted(event: any) {
@@ -224,6 +261,8 @@ export class BoardComponent {
     this.drawingWire.set(null);
   }
 
+  // --- Mouse Events ---
+
   onMouseMove(e: MouseEvent) {
     if (this.startDrawingPin) {
       const svgP = this.getMouseSVGPoint(e);
@@ -237,5 +276,81 @@ export class BoardComponent {
       this.startDrawingPin = null;
       this.drawingWire.set(null);
     }
+  }
+
+  // --- Touch Events ---
+
+  onTouchMove(e: TouchEvent) {
+    if (!this.startDrawingPin) return;
+    e.preventDefault();
+    
+    const touch = e.touches[0];
+    if (touch) {
+      const svgP = this.getTouchSVGPoint(touch.clientX, touch.clientY);
+      this.currentMousePos.set(svgP);
+    }
+  }
+
+  onTouchEnd(e: TouchEvent) {
+    if (!this.startDrawingPin) return;
+    e.preventDefault();
+
+    // On touch devices, touchend doesn't fire on the "target" element under the finger.
+    // We use the last touch position + hit-test to find which pin (if any) is under the finger.
+    const touch = e.changedTouches[0];
+    if (touch) {
+      const targetPin = this.findPinAtPoint(touch.clientX, touch.clientY);
+      if (targetPin) {
+        this.finishWire(targetPin);
+        return;
+      }
+    }
+
+    // No valid pin found — cancel the wire
+    this.cancelWire();
+  }
+
+  onTouchCancel() {
+    this.cancelWire();
+  }
+
+  /**
+   * Finds a Pin model under the given screen coordinates by checking proximity
+   * to known pin positions in SVG space.
+   */
+  private findPinAtPoint(clientX: number, clientY: number): Pin | null {
+    const svgP = this.getTouchSVGPoint(clientX, clientY);
+    const hitRadius = 16; // Generous touch target in SVG units
+
+    for (const el of this.elements()) {
+      for (let i = 0; i < el.inputs.length; i++) {
+        const pos = this.calcPinPos(el, 'IN', i, el.inputs.length);
+        if (this.isWithinRadius(svgP, pos, hitRadius)) {
+          return el.inputs[i];
+        }
+      }
+      for (let i = 0; i < el.outputs.length; i++) {
+        const pos = this.calcPinPos(el, 'OUT', i, el.outputs.length);
+        if (this.isWithinRadius(svgP, pos, hitRadius)) {
+          return el.outputs[i];
+        }
+      }
+    }
+    return null;
+  }
+
+  private isWithinRadius(
+    a: {x: number, y: number}, 
+    b: {x: number, y: number}, 
+    radius: number
+  ): boolean {
+    const dx = a.x - b.x;
+    const dy = a.y - b.y;
+    return (dx * dx + dy * dy) <= (radius * radius);
+  }
+
+  private cancelWire() {
+    this.startDrawingPin = null;
+    this.drawingWire.set(null);
   }
 }

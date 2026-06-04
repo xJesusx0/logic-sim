@@ -3,7 +3,6 @@ import { Pin, LOGIC_COLORS } from '../../../core';
 
 @Component({
   selector: '[app-pin]',
-  standalone: true,
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
     <!-- [attr.cx] and [attr.cy] are provided via SVG transform of the parent <g> wrapper -->
@@ -15,6 +14,8 @@ import { Pin, LOGIC_COLORS } from '../../../core';
       class="pin"
       (mousedown)="onMouseDown($event)"
       (mouseup)="onMouseUp($event)"
+      (touchstart)="onTouchStart($event)"
+      (touchend)="onTouchEnd($event)"
     />
   `,
   styles: `
@@ -46,8 +47,8 @@ export class PinComponent {
     }
   });
 
-  pinDown = output<{event: MouseEvent, pin: Pin}>();
-  pinUp = output<{event: MouseEvent, pin: Pin}>();
+  pinDown = output<{event: MouseEvent | TouchEvent, pin: Pin}>();
+  pinUp = output<{event: MouseEvent | TouchEvent, pin: Pin}>();
 
   onMouseDown(e: MouseEvent) {
     e.stopPropagation();
@@ -55,6 +56,18 @@ export class PinComponent {
   }
 
   onMouseUp(e: MouseEvent) {
+    e.stopPropagation();
+    this.pinUp.emit({event: e, pin: this.pin()});
+  }
+
+  onTouchStart(e: TouchEvent) {
+    e.preventDefault();
+    e.stopPropagation();
+    this.pinDown.emit({event: e, pin: this.pin()});
+  }
+
+  onTouchEnd(e: TouchEvent) {
+    e.preventDefault();
     e.stopPropagation();
     this.pinUp.emit({event: e, pin: this.pin()});
   }
