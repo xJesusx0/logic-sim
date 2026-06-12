@@ -169,6 +169,15 @@ export class SimulatorService {
     }
   }
 
+  public setElementName(id: string, name: string): void {
+    const el = this.engine.elements.get(id);
+    if (el) {
+      this.saveState();
+      el.name = name;
+      this.syncStructure();
+    }
+  }
+
   // --- Selection & Deletion ---
 
   public toggleSelection(id: string, multi: boolean = false) {

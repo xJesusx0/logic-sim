@@ -6,6 +6,14 @@ import { Wire, LOGIC_COLORS } from '../../../core';
   standalone: true,
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
+    <!-- Hitbox for easier selection -->
+    <svg:path 
+      [attr.d]="pathData()" 
+      fill="none" 
+      stroke="transparent" 
+      stroke-width="15" 
+      style="cursor: pointer;" />
+      
     <svg:path 
       [attr.d]="pathData()" 
       fill="none" 

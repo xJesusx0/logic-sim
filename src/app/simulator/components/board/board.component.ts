@@ -40,7 +40,7 @@ import { CircuitElement, Wire, Pin } from '../../../core';
       }
       
       @if (drawingWire()) {
-        <svg:g app-wire [wire]="drawingWire()!" [tick]="0" [pathData]="drawingPath()" />
+        <svg:g app-wire [wire]="drawingWire()!" [tick]="0" [pathData]="drawingPath()" style="pointer-events: none;" />
       }
 
       @for (el of elements(); track el.id) {
@@ -74,11 +74,13 @@ import { CircuitElement, Wire, Pin } from '../../../core';
       background-color: #f9fafb;
       touch-action: none;
     }
-    ::ng-deep .selected > .gate-group *:nth-child(2) {
-       filter: drop-shadow(0 0 6px rgba(59, 130, 246, 0.8));
+    ::ng-deep .selected > .gate-group > *:first-child {
+       filter: drop-shadow(0 0 8px rgba(59, 130, 246, 0.8));
+       stroke: #3b82f6;
     }
-    ::ng-deep .selected.wire {
-       filter: drop-shadow(0 0 4px rgba(59, 130, 246, 0.8));
+    ::ng-deep .selected path.wire {
+       filter: drop-shadow(0 0 6px rgba(59, 130, 246, 0.8));
+       stroke: #3b82f6 !important;
     }
   `
 })
@@ -286,6 +288,12 @@ export class BoardComponent implements OnInit {
     if (el.type === 'INPUT') {
       e.stopPropagation();
       this.simulator.toggleInput(el.id);
+    } else {
+      e.stopPropagation();
+      const newName = prompt('Enter a label for this element:', el.name || '');
+      if (newName !== null) {
+        this.simulator.setElementName(el.id, newName);
+      }
     }
   }
 
