@@ -47,6 +47,7 @@ import { CircuitElement, Wire, Pin } from '../../../core';
           app-gate 
           [element]="el" 
           [tick]="renderTick()"
+          [activePinId]="selectedPinToConnect()?.id || null"
           [class.selected]="selectedIds().has(el.id)"
           (click)="onGateClick($event, el.id)"
           (pinDown)="startWire($event.pin)"
@@ -109,6 +110,7 @@ export class BoardComponent implements OnInit {
   private draggingElement = signal<CircuitElement | null>(null);
   private hasDragged = false;
 
+  selectedPinToConnect = signal<Pin | null>(null);
   drawingWire = signal<Wire | null>(null);
   private startDrawingPin: Pin | null = null;
   private currentMousePos = signal<{x: number, y: number}>({x:0, y:0});
@@ -319,6 +321,25 @@ export class BoardComponent implements OnInit {
   // --- Wiring ---
 
   startWire(pin: Pin) {
+    const current = this.selectedPinToConnect();
+    
+    if (current) {
+        if (current.id === pin.id) {
+            // Untap
+            this.cancelWire();
+            return;
+        } else if (current.direction !== pin.direction) {
+            // Valid target! connect!
+            this.finishWire(pin);
+            return;
+        } else {
+            // Tapped different pin of same direction -> Swap selection
+            this.cancelWire();
+            // will naturally proceed to select the new one below
+        }
+    }
+
+    this.selectedPinToConnect.set(pin);
     this.startDrawingPin = pin;
     const dummyWire: Wire = {
       id: 'drawing',
@@ -331,7 +352,8 @@ export class BoardComponent implements OnInit {
   }
 
   finishWire(pin: Pin) {
-    if (!this.startDrawingPin || this.startDrawingPin.id === pin.id) return;
+    if (!this.startDrawingPin) return;
+    if (this.startDrawingPin.id === pin.id) return; // Leave for tap-to-connect!
     
     const source = this.startDrawingPin.direction === 'OUT' ? this.startDrawingPin : pin;
     const target = this.startDrawingPin.direction === 'IN' ? this.startDrawingPin : pin;
@@ -345,8 +367,7 @@ export class BoardComponent implements OnInit {
       });
     }
     
-    this.startDrawingPin = null;
-    this.drawingWire.set(null);
+    this.cancelWire();
   }
 
   // --- Mouse / Touch Core Events ---
@@ -404,8 +425,9 @@ export class BoardComponent implements OnInit {
       this.draggingElement.set(null);
     }
     if (this.startDrawingPin) {
-      this.startDrawingPin = null;
-      this.drawingWire.set(null);
+      if (e.target === this.getSvgElement() || (e.target as Element).tagName === 'rect') {
+        this.cancelWire();
+      }
     }
   }
 
@@ -535,6 +557,7 @@ export class BoardComponent implements OnInit {
   }
 
   private cancelWire() {
+    this.selectedPinToConnect.set(null);
     this.startDrawingPin = null;
     this.drawingWire.set(null);
   }

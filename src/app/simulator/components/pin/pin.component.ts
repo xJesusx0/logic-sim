@@ -12,6 +12,7 @@ import { Pin, LOGIC_COLORS } from '../../../core';
       stroke="#1f2937"
       stroke-width="1.5"
       class="pin"
+      [class.active]="isActive()"
       (mousedown)="onMouseDown($event)"
       (mouseup)="onMouseUp($event)"
       (touchstart)="onTouchStart($event)"
@@ -26,11 +27,18 @@ import { Pin, LOGIC_COLORS } from '../../../core';
     .pin:hover {
       r: 6px;
     }
+    .pin.active {
+      stroke: #3b82f6;
+      stroke-width: 3;
+      r: 6px;
+      filter: drop-shadow(0 0 4px rgba(59, 130, 246, 0.8));
+    }
   `
 })
 export class PinComponent {
   pin = input.required<Pin>();
   tick = input<number>(0);
+  isActive = input<boolean>(false);
   
   radius = input<number>(4);
 

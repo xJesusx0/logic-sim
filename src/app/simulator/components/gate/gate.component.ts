@@ -23,6 +23,7 @@ import { CircuitElement, Pin, LogicGate, LOGIC_COLORS } from '../../../core';
 
       @for (p of inputs(); track p.id; let i = $index) {
         <svg:g app-pin [pin]="p" [tick]="tick()" 
+          [isActive]="activePinId() === p.id"
           [attr.transform]="getPinTransform('IN', i, inputs().length)"
           (pinDown)="pinDown.emit($event)"
           (pinUp)="pinUp.emit($event)">
@@ -31,6 +32,7 @@ import { CircuitElement, Pin, LogicGate, LOGIC_COLORS } from '../../../core';
       
       @for (p of outputs(); track p.id; let i = $index) {
         <svg:g app-pin [pin]="p" [tick]="tick()" 
+          [isActive]="activePinId() === p.id"
           [attr.transform]="getPinTransform('OUT', i, outputs().length)"
           (pinDown)="pinDown.emit($event)"
           (pinUp)="pinUp.emit($event)">
@@ -50,6 +52,7 @@ import { CircuitElement, Pin, LogicGate, LOGIC_COLORS } from '../../../core';
 export class GateComponent {
   element = input.required<CircuitElement>();
   tick = input<number>(0);
+  activePinId = input<string | null>(null);
   
   pinDown = output<{event: MouseEvent | TouchEvent, pin: Pin}>();
   pinUp = output<{event: MouseEvent | TouchEvent, pin: Pin}>();
