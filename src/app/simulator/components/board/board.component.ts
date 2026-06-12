@@ -1,4 +1,4 @@
-import { Component, ChangeDetectionStrategy, inject, signal, computed, ElementRef, OnInit, HostListener } from '@angular/core';
+import { Component, ChangeDetectionStrategy, inject, signal, computed, ElementRef, OnInit, HostListener, output } from '@angular/core';
 import { SimulatorService } from '../../services/simulator.service';
 import { GateComponent } from '../gate/gate.component';
 import { WireComponent } from '../wire/wire.component';
@@ -17,6 +17,8 @@ import { CircuitElement, Wire, Pin } from '../../../core';
       (mouseup)="onMouseUp($event)"
       (mouseleave)="onMouseUp($event)"
       (wheel)="onWheel($event)"
+      (wheel)="onWheel($event)"
+      (touchstart)="onBoardTouchStart($event)"
       (touchmove)="onTouchMove($event)"
       (touchend)="onTouchEnd($event)"
       (touchcancel)="onTouchCancel()">
@@ -82,6 +84,8 @@ export class BoardComponent implements OnInit {
   private simulator = inject(SimulatorService);
   private hostEl = inject(ElementRef);
 
+  boardTap = output<{x: number, y: number}>();
+
   elements = this.simulator.elements;
   wires = this.simulator.wires;
   tick = this.simulator.tickCount;
@@ -112,6 +116,15 @@ export class BoardComponent implements OnInit {
   private svgElement: SVGSVGElement | null = null;
   private isPanning = false;
   private lastMousePoint = { x: 0, y: 0 };
+  
+  // Pinch to zoom state
+  private initialPinchDistance = 0;
+  private initialZoom = 1;
+  private isPinching = false;
+  private touchDownTime = 0;
+  private initialPanX = 0;
+  private initialPanY = 0;
+  private pinchCenterSVG = {x: 0, y: 0};
 
   ngOnInit() {
     this.updateBoardDimensions();
@@ -287,6 +300,7 @@ export class BoardComponent implements OnInit {
     this.draggingElement.set(el);
     const touch = e.touches[0];
     this.lastMousePoint = this.getTouchSVGPoint(touch.clientX, touch.clientY);
+    this.touchDownTime = Date.now();
   }
 
   onGateDoubleClick(e: MouseEvent, el: CircuitElement) {
@@ -336,6 +350,27 @@ export class BoardComponent implements OnInit {
   }
 
   // --- Mouse / Touch Core Events ---
+  
+  private getDistance(t1: Touch, t2: Touch) {
+    return Math.hypot(t2.clientX - t1.clientX, t2.clientY - t1.clientY);
+  }
+  
+  onBoardTouchStart(e: TouchEvent) {
+    this.touchDownTime = Date.now();
+    if (e.touches.length === 2) {
+      e.preventDefault();
+      this.isPinching = true;
+      this.initialPinchDistance = this.getDistance(e.touches[0], e.touches[1]);
+      this.initialZoom = this.zoom();
+      
+      const centerX = (e.touches[0].clientX + e.touches[1].clientX) / 2;
+      const centerY = (e.touches[0].clientY + e.touches[1].clientY) / 2;
+      
+      this.pinchCenterSVG = this.getTouchSVGPoint(centerX, centerY);
+      this.initialPanX = this.panX();
+      this.initialPanY = this.panY();
+    }
+  }
 
   onMouseMove(e: MouseEvent) {
     if (this.isPanning) {
@@ -375,6 +410,30 @@ export class BoardComponent implements OnInit {
   }
 
   onTouchMove(e: TouchEvent) {
+    if (e.touches.length === 2 && this.isPinching) {
+      e.preventDefault();
+      const dist = this.getDistance(e.touches[0], e.touches[1]);
+      const scale = dist / this.initialPinchDistance;
+      
+      let newZoom = this.initialZoom * scale;
+      newZoom = Math.max(0.2, Math.min(newZoom, 5));
+      this.zoom.set(newZoom);
+      
+      const centerX = (e.touches[0].clientX + e.touches[1].clientX) / 2;
+      const centerY = (e.touches[0].clientY + e.touches[1].clientY) / 2;
+      
+      const boardRect = this.hostEl.nativeElement.getBoundingClientRect();
+      const rX = (centerX - boardRect.left) / this.boardWidth();
+      const rY = (centerY - boardRect.top) / this.boardHeight();
+      
+      const newPanX = this.pinchCenterSVG.x - rX * (this.boardWidth() / newZoom);
+      const newPanY = this.pinchCenterSVG.y - rY * (this.boardHeight() / newZoom);
+      
+      this.panX.set(newPanX);
+      this.panY.set(newPanY);
+      return;
+    }
+
     if (this.draggingElement()) {
       e.preventDefault();
       const touch = e.touches[0];
@@ -402,14 +461,37 @@ export class BoardComponent implements OnInit {
   }
 
   onTouchEnd(e: TouchEvent) {
-    if (this.draggingElement()) {
-      if (this.hasDragged) {
+    if (this.isPinching) {
+      if (e.touches.length < 2) {
+        this.isPinching = false;
+      }
+      return;
+    }
+
+    const duration = Date.now() - this.touchDownTime;
+    const isTap = !this.hasDragged && duration < 300;
+
+    const el = this.draggingElement();
+    if (el) {
+      if (isTap && el.type === 'INPUT') {
+        this.simulator.toggleInput(el.id);
+      } else if (this.hasDragged) {
         this.simulator.recordDragPositionChange();
       }
       this.draggingElement.set(null);
+      this.simulator.clearSelection();
+      return;
     }
 
-    if (!this.startDrawingPin) return;
+    if (!this.startDrawingPin) {
+      if (isTap && e.changedTouches[0]) {
+         const touch = e.changedTouches[0];
+         const svgP = this.getTouchSVGPoint(touch.clientX, touch.clientY);
+         this.boardTap.emit(svgP);
+         this.simulator.clearSelection();
+      }
+      return;
+    }
     e.preventDefault();
 
     const touch = e.changedTouches[0];
@@ -424,6 +506,7 @@ export class BoardComponent implements OnInit {
   }
 
   onTouchCancel() {
+    this.isPinching = false;
     this.draggingElement.set(null);
     this.cancelWire();
   }

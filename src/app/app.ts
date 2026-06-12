@@ -16,6 +16,8 @@ export class App {
   protected readonly isRunning = this.simulator.isRunning;
   
   protected saveMessage = signal<string>('');
+  
+  protected selectedPaletteItem = signal<string | null>(null);
 
   @HostListener('window:keydown', ['$event'])
   handleKeyDown(event: KeyboardEvent) {
@@ -131,6 +133,22 @@ export class App {
     position.y = Math.max(0, position.y);
 
     this.createElement(type, position);
+  }
+  
+  selectPaletteItem(type: string) {
+    if (this.selectedPaletteItem() === type) {
+      this.selectedPaletteItem.set(null); // toggle off
+    } else {
+      this.selectedPaletteItem.set(type);
+    }
+  }
+
+  onBoardTap(position: {x: number, y: number}) {
+    const type = this.selectedPaletteItem();
+    if (type) {
+      this.createElement(type, position);
+      this.selectedPaletteItem.set(null);
+    }
   }
   
   private createElement(type: string, position: {x: number, y: number}) {

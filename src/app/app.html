@@ -58,6 +58,12 @@
   </header>
 
   <div class="workspace">
+    @if (selectedPaletteItem()) {
+      <div class="tap-indicator">
+        Tap the board to place {{ selectedPaletteItem() }}
+      </div>
+    }
+
     <!-- Desktop: sidebar | Mobile: hidden (shown as bottom bar) -->
     <aside class="palette glass desktop-palette">
       <h2>Components</h2>
@@ -65,8 +71,10 @@
         @for (item of paletteItems; track item.type) {
           <div 
             class="palette-item" 
+            [class.active]="selectedPaletteItem() === item.type"
             draggable="true"
-            (dragstart)="onDragStart($event, item.type)">
+            (dragstart)="onDragStart($event, item.type)"
+            (click)="selectPaletteItem(item.type)">
             <div class="icon">
               @if (item.type === 'SWITCH') {
                 <span class="dot input"></span>
@@ -83,7 +91,7 @@
     </aside>
 
     <main class="main-area" (dragover)="onDragOver($event)" (drop)="onDrop($event)">
-      <app-board />
+      <app-board (boardTap)="onBoardTap($event)" />
     </main>
   </div>
 
@@ -93,8 +101,10 @@
       @for (item of paletteItems; track item.type) {
         <div 
           class="palette-item-mobile"
+          [class.active]="selectedPaletteItem() === item.type"
           draggable="true"
-          (dragstart)="onDragStart($event, item.type)">
+          (dragstart)="onDragStart($event, item.type)"
+          (click)="selectPaletteItem(item.type)">
           <div class="icon">
             @if (item.type === 'SWITCH') {
               <span class="dot input"></span>

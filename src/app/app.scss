@@ -198,6 +198,13 @@
       cursor: grabbing;
     }
 
+    &.active {
+      background: white;
+      border-color: #3b82f6;
+      box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.4);
+      transform: translateX(4px);
+    }
+
     span {
       font-size: 0.9rem;
       font-weight: 500;
@@ -247,6 +254,29 @@
   box-sizing: border-box;
 }
 
+.tap-indicator {
+  position: absolute;
+  top: 16px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: rgba(59, 130, 246, 0.9);
+  color: white;
+  padding: 8px 16px;
+  border-radius: 20px;
+  font-size: 0.9rem;
+  font-weight: 500;
+  pointer-events: none;
+  z-index: 20;
+  box-shadow: 0 4px 12px rgba(59, 130, 246, 0.3);
+  animation: pulse 2s infinite;
+}
+
+@keyframes pulse {
+  0% { opacity: 0.9; transform: translateX(-50%) scale(1); }
+  50% { opacity: 1; transform: translateX(-50%) scale(1.05); }
+  100% { opacity: 0.9; transform: translateX(-50%) scale(1); }
+}
+
 // ─── Responsive: Mobile ───────────────────────────────────────────
 
 .btn-label {
@@ -276,6 +306,8 @@
     padding: 7px 10px;
     font-size: 0.8rem;
     gap: 4px;
+    min-height: 44px; // Touch friendly
+    min-width: 44px;  // Touch friendly
 
     // Ocultar labels en pantallas muy pequeñas
     .btn-label {
@@ -346,6 +378,13 @@
     &:active {
       background: white;
       transform: scale(0.95);
+    }
+
+    &.active {
+      background: white;
+      border-color: #3b82f6;
+      box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.4);
+      transform: scale(1.05);
     }
 
     span {
