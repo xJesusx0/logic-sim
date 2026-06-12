@@ -1,4 +1,4 @@
-import { Component, inject } from '@angular/core';
+import { Component, inject, HostListener, signal } from '@angular/core';
 import { BoardComponent } from './simulator/components/board/board.component';
 import { SimulatorService } from './simulator/services/simulator.service';
 import { AndGate, OrGate, NotGate, NandGate, NorGate, XorGate, XnorGate, SwitchInput, LedOutput } from './core';
@@ -14,6 +14,61 @@ export class App {
   private simulator = inject(SimulatorService);
   
   protected readonly isRunning = this.simulator.isRunning;
+  
+  protected saveMessage = signal<string>('');
+
+  @HostListener('window:keydown', ['$event'])
+  handleKeyDown(event: KeyboardEvent) {
+    if ((event.key === 'Delete' || event.key === 'Backspace') && !this.isTyping(event)) {
+      this.simulator.deleteSelected();
+    }
+    
+    if (event.ctrlKey || event.metaKey) {
+      if (event.key === 'z') {
+        event.preventDefault();
+        if (event.shiftKey) {
+          this.simulator.redo();
+        } else {
+          this.simulator.undo();
+        }
+      }
+      if (event.key === 'y') {
+        event.preventDefault();
+        this.simulator.redo();
+      }
+      if (event.key === 's') {
+        event.preventDefault();
+        this.save();
+      }
+    }
+  }
+
+  private isTyping(event: KeyboardEvent): boolean {
+    const target = event.target as HTMLElement;
+    return target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable;
+  }
+
+  save() {
+    const success = this.simulator.saveToLocalStorage();
+    this.showFeedback(success ? 'Circuit saved successfully!' : 'Failed to save circuit.');
+  }
+
+  load() {
+    const success = this.simulator.loadFromLocalStorage();
+    this.showFeedback(success ? 'Circuit loaded successfully!' : 'No save found.');
+  }
+
+  undo() { this.simulator.undo(); }
+  redo() { this.simulator.redo(); }
+  deleteSelection() { this.simulator.deleteSelected(); }
+
+  protected get canUndo() { return this.simulator.canUndo; }
+  protected get canRedo() { return this.simulator.canRedo; }
+
+  private showFeedback(msg: string) {
+    this.saveMessage.set(msg);
+    setTimeout(() => this.saveMessage.set(''), 3000);
+  }
   
   protected readonly paletteItems = [
     { type: 'SWITCH', label: 'Switch (IN)' },

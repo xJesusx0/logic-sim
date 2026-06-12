@@ -1,4 +1,4 @@
-import { Component, ChangeDetectionStrategy, inject, signal, computed, ElementRef } from '@angular/core';
+import { Component, ChangeDetectionStrategy, inject, signal, computed, ElementRef, OnInit, HostListener } from '@angular/core';
 import { DragDropModule, CdkDragDrop, CdkDragMove } from '@angular/cdk/drag-drop';
 import { SimulatorService } from '../../services/simulator.service';
 import { GateComponent } from '../gate/gate.component';
@@ -12,9 +12,12 @@ import { CircuitElement, Wire, Pin } from '../../../core';
   template: `
     <svg 
       class="board" 
+      [attr.viewBox]="viewBox()"
+      (mousedown)="onBoardMouseDown($event)"
       (mousemove)="onMouseMove($event)" 
       (mouseup)="onMouseUp($event)"
       (mouseleave)="onMouseUp($event)"
+      (wheel)="onWheel($event)"
       (touchmove)="onTouchMove($event)"
       (touchend)="onTouchEnd($event)"
       (touchcancel)="onTouchCancel()"
@@ -23,14 +26,17 @@ import { CircuitElement, Wire, Pin } from '../../../core';
       
       <defs>
         <pattern id="grid" width="20" height="20" patternUnits="userSpaceOnUse">
-          <circle cx="2" cy="2" r="1" fill="#e5e7eb"></circle>
+          <circle cx="2" cy="2" r="1" fill="#cbd5e1"></circle>
         </pattern>
       </defs>
       
-      <rect width="100%" height="100%" fill="url(#grid)" />
+      <!-- Grid Rect needs to be large enough to cover panned areas -->
+      <rect x="-50000" y="-50000" width="100000" height="100000" fill="url(#grid)" />
 
       @for (w of wires(); track w.id) {
-        <svg:g app-wire [wire]="w" [tick]="tick()" [pathData]="getWirePath(w)" />
+        <svg:g app-wire [wire]="w" [tick]="tick()" [pathData]="getWirePath(w)" 
+               [class.selected]="selectedIds().has(w.id)"
+               (click)="onWireClick($event, w.id)" />
       }
       
       @if (drawingWire()) {
@@ -42,6 +48,8 @@ import { CircuitElement, Wire, Pin } from '../../../core';
           app-gate 
           [element]="el" 
           [tick]="tick()"
+          [class.selected]="selectedIds().has(el.id)"
+          (click)="onGateClick($event, el.id)"
           (pinDown)="startWire($event.pin)"
           (pinUp)="finishWire($event.pin)"
           (dblclick)="onGateDoubleClick($event, el)"
@@ -64,17 +72,37 @@ import { CircuitElement, Wire, Pin } from '../../../core';
       width: 100%;
       height: 100%;
       background-color: #f9fafb;
-      touch-action: none; /* Previene scroll en touch devices */
+      touch-action: none;
+    }
+    ::ng-deep .selected > .gate-group *:nth-child(2) {
+       filter: drop-shadow(0 0 6px rgba(59, 130, 246, 0.8));
+    }
+    ::ng-deep .selected.wire {
+       filter: drop-shadow(0 0 4px rgba(59, 130, 246, 0.8));
     }
   `
 })
-export class BoardComponent {
+export class BoardComponent implements OnInit {
   private simulator = inject(SimulatorService);
   private hostEl = inject(ElementRef);
 
   elements = this.simulator.elements;
   wires = this.simulator.wires;
   tick = this.simulator.tickCount;
+  selectedIds = this.simulator.selectedIds;
+
+  // ViewBox / Panning / Zooming
+  panX = signal(0);
+  panY = signal(0);
+  zoom = signal(1);
+  boardWidth = signal(1000);
+  boardHeight = signal(800);
+
+  viewBox = computed(() => {
+    const w = this.boardWidth() / this.zoom();
+    const h = this.boardHeight() / this.zoom();
+    return `${this.panX()} ${this.panY()} ${w} ${h}`;
+  });
 
   private draggingElement = signal<CircuitElement | null>(null);
   private dragOffset = { x: 0, y: 0 };
@@ -84,8 +112,22 @@ export class BoardComponent {
   private currentMousePos = signal<{x: number, y: number}>({x:0, y:0});
 
   private svgElement: SVGSVGElement | null = null;
+  private isPanning = false;
+  private lastMousePoint = { x: 0, y: 0 };
 
-  /** Map de pinId -> Pin para buscar pins por su ID cuando un touch termina */
+  ngOnInit() {
+    this.updateBoardDimensions();
+  }
+
+  @HostListener('window:resize')
+  updateBoardDimensions() {
+    const rect = this.hostEl.nativeElement.getBoundingClientRect();
+    if (rect.width > 0 && rect.height > 0) {
+      this.boardWidth.set(rect.width);
+      this.boardHeight.set(rect.height);
+    }
+  }
+
   private pinMap = computed(() => {
     const map = new Map<string, Pin>();
     for (const el of this.elements()) {
@@ -146,7 +188,7 @@ export class BoardComponent {
   }
 
   private getMouseSVGPoint(e: MouseEvent): {x: number, y: number} {
-    const svgEl = e.currentTarget as SVGSVGElement | null;
+    const svgEl = this.getSvgElement();
     if (!svgEl) return {x: e.clientX, y: e.clientY};
     
     const pt = svgEl.createSVGPoint();
@@ -161,7 +203,6 @@ export class BoardComponent {
     return {x: e.clientX, y: e.clientY};
   }
 
-  /** Converts touch client coordinates to SVG coordinates */
   private getTouchSVGPoint(clientX: number, clientY: number): {x: number, y: number} {
     const svgEl = this.getSvgElement();
     if (!svgEl) return {x: clientX, y: clientY};
@@ -185,14 +226,60 @@ export class BoardComponent {
     return this.svgElement;
   }
 
+  // --- Zoom, Pan & Click ---
+
+  onWheel(e: WheelEvent) {
+    if(!e.ctrlKey && !e.metaKey && !e.shiftKey && !e.altKey && !e.button) {
+      e.preventDefault();
+      const zoomFactor = 1.1;
+      let currentZoom = this.zoom();
+      if (e.deltaY < 0) currentZoom *= zoomFactor;
+      else currentZoom /= zoomFactor;
+      
+      currentZoom = Math.max(0.2, Math.min(currentZoom, 5));
+      
+      const target = this.getMouseSVGPoint(e as any);
+      this.zoom.set(currentZoom);
+      
+      const rX = e.offsetX / this.boardWidth();
+      const rY = e.offsetY / this.boardHeight();
+      const newPanX = target.x - rX * (this.boardWidth() / currentZoom);
+      const newPanY = target.y - rY * (this.boardHeight() / currentZoom);
+
+      this.panX.set(newPanX);
+      this.panY.set(newPanY);
+    }
+  }
+
+  onBoardMouseDown(e: MouseEvent) {
+    if (e.button === 1 || (e.button === 0 && e.altKey)) {
+      e.preventDefault();
+      this.isPanning = true;
+      this.lastMousePoint = { x: e.clientX, y: e.clientY };
+    } else if (e.button === 0) {
+      if (e.target === this.getSvgElement() || (e.target as Element).tagName === 'rect') {
+        this.simulator.clearSelection();
+      }
+    }
+  }
+
+  onGateClick(e: MouseEvent, id: string) {
+    e.stopPropagation();
+    this.simulator.toggleSelection(id, e.shiftKey);
+  }
+
+  onWireClick(e: MouseEvent, id: string) {
+    e.stopPropagation();
+    this.simulator.toggleSelection(id, e.shiftKey);
+  }
+
+  // --- Drag & Drop ---
+
   onCdkDragStarted(event: any) {
     const el = event.source.data as CircuitElement;
     this.draggingElement.set(el);
     const pos = el.position || {x:0, y:0};
-    this.dragOffset = {
-      x: pos.x,
-      y: pos.y
-    };
+    this.dragOffset = { x: pos.x, y: pos.y };
   }
 
   onGateDoubleClick(e: MouseEvent, el: CircuitElement) {
@@ -207,13 +294,12 @@ export class BoardComponent {
     if (!el) return;
     
     const source = event.source;
-    const dragRef = source._dragRef;
-    const transform = dragRef._activeTransform;
+    const transform = source._dragRef._activeTransform;
     
     if (transform) {
       el.position = {
-        x: this.dragOffset.x + transform.x,
-        y: this.dragOffset.y + transform.y
+        x: this.dragOffset.x + transform.x / this.zoom(),
+        y: this.dragOffset.y + transform.y / this.zoom()
       };
     }
   }
@@ -222,13 +308,13 @@ export class BoardComponent {
     const el = this.draggingElement();
     if (el) {
       const pos = el.position || {x:0, y:0};
-      this.dragOffset = {
-        x: pos.x,
-        y: pos.y
-      };
+      this.dragOffset = { x: pos.x, y: pos.y };
+      this.simulator.recordDragPositionChange();
     }
     this.draggingElement.set(null);
   }
+
+  // --- Wiring ---
 
   startWire(pin: Pin) {
     this.startDrawingPin = pin;
@@ -261,24 +347,29 @@ export class BoardComponent {
     this.drawingWire.set(null);
   }
 
-  // --- Mouse Events ---
+  // --- Mouse / Touch Core Events ---
 
   onMouseMove(e: MouseEvent) {
-    if (this.startDrawingPin) {
+    if (this.isPanning) {
+      const dx = (e.clientX - this.lastMousePoint.x) / this.zoom();
+      const dy = (e.clientY - this.lastMousePoint.y) / this.zoom();
+      this.panX.set(this.panX() - dx);
+      this.panY.set(this.panY() - dy);
+      this.lastMousePoint = { x: e.clientX, y: e.clientY };
+    } else if (this.startDrawingPin) {
       const svgP = this.getMouseSVGPoint(e);
       this.currentMousePos.set(svgP);
     }
   }
 
   onMouseUp(e: MouseEvent) {
+    this.isPanning = false;
     this.draggingElement.set(null);
     if (this.startDrawingPin) {
       this.startDrawingPin = null;
       this.drawingWire.set(null);
     }
   }
-
-  // --- Touch Events ---
 
   onTouchMove(e: TouchEvent) {
     if (!this.startDrawingPin) return;
@@ -295,8 +386,6 @@ export class BoardComponent {
     if (!this.startDrawingPin) return;
     e.preventDefault();
 
-    // On touch devices, touchend doesn't fire on the "target" element under the finger.
-    // We use the last touch position + hit-test to find which pin (if any) is under the finger.
     const touch = e.changedTouches[0];
     if (touch) {
       const targetPin = this.findPinAtPoint(touch.clientX, touch.clientY);
@@ -305,8 +394,6 @@ export class BoardComponent {
         return;
       }
     }
-
-    // No valid pin found — cancel the wire
     this.cancelWire();
   }
 
@@ -314,36 +401,24 @@ export class BoardComponent {
     this.cancelWire();
   }
 
-  /**
-   * Finds a Pin model under the given screen coordinates by checking proximity
-   * to known pin positions in SVG space.
-   */
   private findPinAtPoint(clientX: number, clientY: number): Pin | null {
     const svgP = this.getTouchSVGPoint(clientX, clientY);
-    const hitRadius = 16; // Generous touch target in SVG units
+    const hitRadius = 16; 
 
     for (const el of this.elements()) {
       for (let i = 0; i < el.inputs.length; i++) {
         const pos = this.calcPinPos(el, 'IN', i, el.inputs.length);
-        if (this.isWithinRadius(svgP, pos, hitRadius)) {
-          return el.inputs[i];
-        }
+        if (this.isWithinRadius(svgP, pos, hitRadius)) return el.inputs[i];
       }
       for (let i = 0; i < el.outputs.length; i++) {
         const pos = this.calcPinPos(el, 'OUT', i, el.outputs.length);
-        if (this.isWithinRadius(svgP, pos, hitRadius)) {
-          return el.outputs[i];
-        }
+        if (this.isWithinRadius(svgP, pos, hitRadius)) return el.outputs[i];
       }
     }
     return null;
   }
 
-  private isWithinRadius(
-    a: {x: number, y: number}, 
-    b: {x: number, y: number}, 
-    radius: number
-  ): boolean {
+  private isWithinRadius(a: {x: number, y: number}, b: {x: number, y: number}, radius: number): boolean {
     const dx = a.x - b.x;
     const dy = a.y - b.y;
     return (dx * dx + dy * dy) <= (radius * radius);
