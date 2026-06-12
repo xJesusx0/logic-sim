@@ -35,7 +35,8 @@ import { CircuitElement, Wire, Pin } from '../../../core';
       @for (w of wires(); track w.id) {
         <svg:g app-wire [wire]="w" [tick]="renderTick()" [pathData]="getWirePath(w)" 
                [class.selected]="selectedIds().has(w.id)"
-               (click)="onWireClick($event, w.id)" />
+               (click)="onWireClick($event, w.id)"
+               (dblclick)="onWireDoubleClick($event, w.id)" />
       }
       
       @if (drawingWire()) {
@@ -109,6 +110,8 @@ export class BoardComponent implements OnInit {
 
   private draggingElement = signal<CircuitElement | null>(null);
   private hasDragged = false;
+  
+  private longPressTimer: any = null;
 
   selectedPinToConnect = signal<Pin | null>(null);
   drawingWire = signal<Wire | null>(null);
@@ -286,7 +289,19 @@ export class BoardComponent implements OnInit {
     this.simulator.toggleSelection(id, e.shiftKey);
   }
 
+  onWireDoubleClick(e: MouseEvent, id: string) {
+    e.stopPropagation();
+    this.simulator.removeWire(id);
+  }
+
   // --- Drag & Drop ---
+
+  private clearLongPress() {
+    if (this.longPressTimer) {
+      clearTimeout(this.longPressTimer);
+      this.longPressTimer = null;
+    }
+  }
 
   onGateMouseDown(e: MouseEvent, el: CircuitElement) {
     if (e.button !== 0) return;
@@ -294,6 +309,14 @@ export class BoardComponent implements OnInit {
     this.hasDragged = false;
     this.draggingElement.set(el);
     this.lastMousePoint = this.getMouseSVGPoint(e);
+
+    this.clearLongPress();
+    this.longPressTimer = setTimeout(() => {
+      if (!this.hasDragged) {
+        this.triggerGateRename(el);
+        this.draggingElement.set(null);
+      }
+    }, 600);
   }
 
   onGateTouchStart(e: TouchEvent, el: CircuitElement) {
@@ -303,6 +326,21 @@ export class BoardComponent implements OnInit {
     const touch = e.touches[0];
     this.lastMousePoint = this.getTouchSVGPoint(touch.clientX, touch.clientY);
     this.touchDownTime = Date.now();
+
+    this.clearLongPress();
+    this.longPressTimer = setTimeout(() => {
+      if (!this.hasDragged) {
+        this.triggerGateRename(el);
+        this.draggingElement.set(null);
+      }
+    }, 600);
+  }
+
+  triggerGateRename(el: CircuitElement) {
+    const newName = prompt('Enter a label for this element:', el.name || '');
+    if (newName !== null) {
+      this.simulator.setElementName(el.id, newName);
+    }
   }
 
   onGateDoubleClick(e: MouseEvent, el: CircuitElement) {
@@ -311,10 +349,7 @@ export class BoardComponent implements OnInit {
       this.simulator.toggleInput(el.id);
     } else {
       e.stopPropagation();
-      const newName = prompt('Enter a label for this element:', el.name || '');
-      if (newName !== null) {
-        this.simulator.setElementName(el.id, newName);
-      }
+      this.triggerGateRename(el);
     }
   }
 
@@ -417,6 +452,7 @@ export class BoardComponent implements OnInit {
   }
 
   onMouseUp(e: MouseEvent) {
+    this.clearLongPress();
     this.isPanning = false;
     if (this.draggingElement()) {
       if (this.hasDragged) {
@@ -483,6 +519,8 @@ export class BoardComponent implements OnInit {
   }
 
   onTouchEnd(e: TouchEvent) {
+    this.clearLongPress();
+    
     if (this.isPinching) {
       if (e.touches.length < 2) {
         this.isPinching = false;
@@ -508,6 +546,14 @@ export class BoardComponent implements OnInit {
     if (!this.startDrawingPin) {
       if (isTap && e.changedTouches[0]) {
          const touch = e.changedTouches[0];
+         
+         // Try to find a nearby pin if we slightly missed the exact 4px SVG circle
+         const maybePin = this.findPinAtPoint(touch.clientX, touch.clientY, 30);
+         if (maybePin) {
+           this.startWire(maybePin);
+           return;
+         }
+         
          const svgP = this.getTouchSVGPoint(touch.clientX, touch.clientY);
          this.boardTap.emit(svgP);
          this.simulator.clearSelection();
@@ -528,32 +574,41 @@ export class BoardComponent implements OnInit {
   }
 
   onTouchCancel() {
+    this.clearLongPress();
     this.isPinching = false;
     this.draggingElement.set(null);
     this.cancelWire();
   }
 
-  private findPinAtPoint(clientX: number, clientY: number): Pin | null {
+  private findPinAtPoint(clientX: number, clientY: number, hitRadius: number = 30): Pin | null {
     const svgP = this.getTouchSVGPoint(clientX, clientY);
-    const hitRadius = 16; 
+    
+    let closestPin: Pin | null = null;
+    let minDistSq = hitRadius * hitRadius;
 
     for (const el of this.elements()) {
       for (let i = 0; i < el.inputs.length; i++) {
         const pos = this.calcPinPos(el, 'IN', i, el.inputs.length);
-        if (this.isWithinRadius(svgP, pos, hitRadius)) return el.inputs[i];
+        const dx = svgP.x - pos.x;
+        const dy = svgP.y - pos.y;
+        const dSq = dx * dx + dy * dy;
+        if (dSq < minDistSq) {
+          closestPin = el.inputs[i];
+          minDistSq = dSq;
+        }
       }
       for (let i = 0; i < el.outputs.length; i++) {
         const pos = this.calcPinPos(el, 'OUT', i, el.outputs.length);
-        if (this.isWithinRadius(svgP, pos, hitRadius)) return el.outputs[i];
+        const dx = svgP.x - pos.x;
+        const dy = svgP.y - pos.y;
+        const dSq = dx * dx + dy * dy;
+        if (dSq < minDistSq) {
+          closestPin = el.outputs[i];
+          minDistSq = dSq;
+        }
       }
     }
-    return null;
-  }
-
-  private isWithinRadius(a: {x: number, y: number}, b: {x: number, y: number}, radius: number): boolean {
-    const dx = a.x - b.x;
-    const dy = a.y - b.y;
-    return (dx * dx + dy * dy) <= (radius * radius);
+    return closestPin;
   }
 
   private cancelWire() {
