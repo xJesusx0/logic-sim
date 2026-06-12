@@ -255,4 +255,13 @@ export class SimulatorService {
     this.tickCount.set(this.engine.state.tickCount); // Debería ser 0
     this.syncStructure();
   }
+
+  public clearBoard(): void {
+    if (this.engine.elements.size === 0 && this.engine.wires.size === 0) return;
+    this.saveState();
+    this.engine.elements.clear();
+    this.engine.wires.clear();
+    this.clearSelection();
+    this.syncStructure();
+  }
 }

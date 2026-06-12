@@ -58,6 +58,12 @@ export class App {
     this.showFeedback(success ? 'Circuit loaded successfully!' : 'No save found.');
   }
 
+  clear() {
+    if (confirm('Are you sure you want to clear the entire board?')) {
+      this.simulator.clearBoard();
+    }
+  }
+
   undo() { this.simulator.undo(); }
   redo() { this.simulator.redo(); }
   deleteSelection() { this.simulator.deleteSelected(); }

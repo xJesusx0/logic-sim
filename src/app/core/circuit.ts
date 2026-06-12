@@ -93,5 +93,16 @@ export class CircuitEngine implements Circuit {
     for (const wire of this.wires.values()) {
       wire.value = 'X';
     }
+
+    for (const el of this.elements.values()) {
+      // Reset Switch inputs to '0'
+      if (el.type === 'INPUT' && (el as any).sourceType === 'SWITCH') {
+        (el as any).state = '0';
+      }
+      // Reset LED outputs to 'X'
+      if (el.type === 'OUTPUT' && (el as any).displayType === 'LED') {
+        (el as any).colorState = 'X';
+      }
+    }
   }
 }
