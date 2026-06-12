@@ -38,12 +38,15 @@
   align-items: center;
   padding: 0 24px;
   z-index: 10;
+  gap: 12px;
+  overflow: hidden;
 
   .logo {
     display: flex;
     align-items: center;
     gap: 12px;
     color: var(--text-dark);
+    flex-shrink: 0;
     
     h1 {
       margin: 0;
@@ -55,7 +58,16 @@
 
   .controls {
     display: flex;
-    gap: 12px;
+    gap: 8px;
+    align-items: center;
+    overflow-x: auto;
+    overflow-y: hidden;
+    scrollbar-width: none;
+    -webkit-overflow-scrolling: touch;
+    flex-shrink: 1;
+    min-width: 0;
+    padding: 4px 0;
+    &::-webkit-scrollbar { display: none; }
   }
 }
 
@@ -291,25 +303,32 @@
   
   .top-bar {
     height: 52px;
-    padding: 0 16px;
+    padding: 0 12px;
+    gap: 8px;
 
     .logo h1 {
-      font-size: 1.1rem;
+      font-size: 1rem;
+    }
+
+    .logo svg {
+      width: 20px;
+      height: 20px;
     }
   }
 
   .controls {
-    gap: 8px;
+    gap: 6px;
   }
 
   .btn {
-    padding: 7px 10px;
+    padding: 6px 8px;
     font-size: 0.8rem;
     gap: 4px;
-    min-height: 44px; // Touch friendly
-    min-width: 44px;  // Touch friendly
+    min-height: 40px; // Touch friendly
+    min-width: 40px;  // Touch friendly
+    flex-shrink: 0;   // Evitar que los botones se compriman
 
-    // Ocultar labels en pantallas muy pequeñas
+    // Ocultar labels en pantallas pequeñas para ahorrar espacio
     .btn-label {
       display: none;
     }
@@ -426,7 +445,23 @@
 @media (max-width: 380px) {
   .top-bar {
     height: 48px;
-    padding: 0 12px;
+    padding: 0 8px;
+    gap: 6px;
+
+    .logo h1 {
+      font-size: 0.9rem;
+    }
+
+    .logo svg {
+      width: 18px;
+      height: 18px;
+    }
+  }
+
+  .btn {
+    min-height: 36px;
+    min-width: 36px;
+    padding: 5px 6px;
   }
 
   .main-area {
