@@ -1,5 +1,6 @@
 import { Component, inject, HostListener, signal } from '@angular/core';
 import { BoardComponent } from './simulator/components/board/board.component';
+import { InteractionMode } from './simulator/components/board/board.component';
 import { SimulatorService } from './simulator/services/simulator.service';
 import { AndGate, OrGate, NotGate, NandGate, NorGate, XorGate, XnorGate, SwitchInput, LedOutput } from './core';
 
@@ -18,6 +19,8 @@ export class App {
   protected saveMessage = signal<string>('');
   
   protected selectedPaletteItem = signal<string | null>(null);
+
+  protected interactionMode = signal<InteractionMode>('add');
 
   @HostListener('window:keydown', ['$event'])
   handleKeyDown(event: KeyboardEvent) {
@@ -135,6 +138,13 @@ export class App {
     this.createElement(type, position);
   }
   
+  setMode(mode: InteractionMode) {
+    this.interactionMode.set(mode);
+    if (mode === 'connect') {
+      this.selectedPaletteItem.set(null);
+    }
+  }
+
   selectPaletteItem(type: string) {
     if (this.selectedPaletteItem() === type) {
       this.selectedPaletteItem.set(null); // toggle off

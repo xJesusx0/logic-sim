@@ -295,7 +295,7 @@
   // Siempre visible en desktop
 }
 
-.bottom-palette {
+.bottom-bar {
   display: none; // oculta en desktop
 }
 
@@ -347,35 +347,88 @@
     flex: 1;
     margin: 8px 8px 0 8px;
     border-radius: 12px;
-    // Dejar espacio para la bottom palette
     margin-bottom: 0;
   }
 
-  // Bottom palette visible en móvil
-  .bottom-palette {
-    display: block;
+  // Bottom bar visible en móvil
+  .bottom-bar {
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    gap: 8px;
     height: 80px;
     margin: 8px;
     border-radius: 12px;
     overflow: hidden;
     flex-shrink: 0;
+    padding: 0 8px;
+  }
 
-    .bottom-palette-scroll {
-      display: flex;
-      flex-direction: row;
-      align-items: center;
-      gap: 8px;
-      padding: 0 12px;
-      height: 100%;
-      overflow-x: auto;
-      overflow-y: hidden;
-      scroll-snap-type: x mandatory;
-      -webkit-overflow-scrolling: touch;
+  // Mode toggle
+  .mode-toggle {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    flex-shrink: 0;
+    padding: 4px;
+    background: rgba(255, 255, 255, 0.35);
+    border-radius: 10px;
+  }
 
-      // Ocultar scrollbar pero mantener funcionalidad
-      scrollbar-width: none;
-      &::-webkit-scrollbar { display: none; }
+  .mode-btn {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 1px;
+    padding: 6px 10px;
+    border: none;
+    border-radius: 8px;
+    background: transparent;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    touch-action: manipulation;
+    color: #64748b;
+    min-width: 52px;
+
+    span {
+      font-size: 0.6rem;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
     }
+
+    &.active {
+      background: white;
+      color: #4f46e5;
+      box-shadow: 0 2px 8px rgba(79, 70, 229, 0.15);
+
+      svg {
+        stroke: #4f46e5;
+      }
+    }
+
+    &:not(.active):active {
+      background: rgba(255, 255, 255, 0.5);
+    }
+  }
+
+  // Scrollable palette items
+  .bottom-palette-scroll {
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    gap: 8px;
+    flex: 1;
+    height: 100%;
+    overflow-x: auto;
+    overflow-y: hidden;
+    scroll-snap-type: x mandatory;
+    -webkit-overflow-scrolling: touch;
+    padding: 0 4px;
+
+    // Ocultar scrollbar pero mantener funcionalidad
+    scrollbar-width: none;
+    &::-webkit-scrollbar { display: none; }
   }
 
   .palette-item-mobile {
@@ -439,6 +492,29 @@
       }
     }
   }
+
+  // Connect mode hint
+  .connect-mode-hint {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex: 1;
+    justify-content: center;
+    padding: 12px;
+    color: #64748b;
+    font-size: 0.8rem;
+    font-weight: 500;
+    animation: fadeIn 0.3s ease;
+
+    span {
+      white-space: nowrap;
+    }
+  }
+
+  @keyframes fadeIn {
+    from { opacity: 0; }
+    to { opacity: 1; }
+  }
 }
 
 // Pantallas muy pequeñas (< 380px)
@@ -468,8 +544,13 @@
     margin: 6px 6px 0 6px;
   }
 
-  .bottom-palette {
+  .bottom-bar {
     height: 72px;
     margin: 6px;
+  }
+
+  .mode-btn {
+    padding: 5px 8px;
+    min-width: 46px;
   }
 }

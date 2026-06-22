@@ -1,13 +1,16 @@
-import { Component, ChangeDetectionStrategy, inject, signal, computed, ElementRef, OnInit, HostListener, output } from '@angular/core';
+import { Component, ChangeDetectionStrategy, inject, signal, computed, ElementRef, OnInit, HostListener, output, input } from '@angular/core';
 import { SimulatorService } from '../../services/simulator.service';
 import { GateComponent } from '../gate/gate.component';
 import { WireComponent } from '../wire/wire.component';
+import { GateTooltipComponent, TooltipState, TooltipAction } from '../gate-tooltip/gate-tooltip.component';
 import { CircuitElement, Wire, Pin } from '../../../core';
+
+export type InteractionMode = 'add' | 'connect';
 
 @Component({
   selector: 'app-board',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [GateComponent, WireComponent],
+  imports: [GateComponent, WireComponent, GateTooltipComponent],
   template: `
     <svg 
       class="board" 
@@ -16,7 +19,6 @@ import { CircuitElement, Wire, Pin } from '../../../core';
       (mousemove)="onMouseMove($event)" 
       (mouseup)="onMouseUp($event)"
       (mouseleave)="onMouseUp($event)"
-      (wheel)="onWheel($event)"
       (wheel)="onWheel($event)"
       (touchstart)="onBoardTouchStart($event)"
       (touchmove)="onTouchMove($event)"
@@ -35,7 +37,7 @@ import { CircuitElement, Wire, Pin } from '../../../core';
       @for (w of wires(); track w.id) {
         <svg:g app-wire [wire]="w" [tick]="renderTick()" [pathData]="getWirePath(w)" 
                [class.selected]="selectedIds().has(w.id)"
-               (click)="onWireClick($event, w.id)"
+               (click)="onWireClick($event, w)"
                (dblclick)="onWireDoubleClick($event, w.id)" />
       }
       
@@ -50,13 +52,37 @@ import { CircuitElement, Wire, Pin } from '../../../core';
           [tick]="renderTick()"
           [activePinId]="selectedPinToConnect()?.id || null"
           [class.selected]="selectedIds().has(el.id)"
-          (click)="onGateClick($event, el.id)"
+          [class.connect-target]="connectSourceId() !== null && connectSourceId() !== el.id"
+          [class.connect-source]="connectSourceId() === el.id"
+          (click)="onGateClick($event, el)"
           (pinDown)="startWire($event.pin)"
           (pinUp)="finishWire($event.pin)"
           (dblclick)="onGateDoubleClick($event, el)"
           (mousedown)="onGateMouseDown($event, el)"
           (touchstart)="onGateTouchStart($event, el)">
         </svg:g>
+      }
+
+      <!-- Connection mode banner inside SVG -->
+      @if (connectSourceId()) {
+        <svg:foreignObject 
+          [attr.x]="panX() + 10 / zoom()" 
+          [attr.y]="panY() + 10 / zoom()" 
+          [attr.width]="(boardWidth() - 20) / zoom()" 
+          height="40">
+          <div class="connect-banner" xmlns="http://www.w3.org/1999/xhtml">
+            <span>Tap a component to connect to <strong>{{ connectSourceName() }}</strong></span>
+            <button class="cancel-btn" (click)="cancelConnection()" (touchend)="cancelConnection($event)">✕</button>
+          </div>
+        </svg:foreignObject>
+      }
+
+      <!-- Tooltip overlay -->
+      @if (tooltipState()) {
+        <svg:g app-gate-tooltip 
+          [state]="tooltipState()!" 
+          (actionSelected)="onTooltipAction($event)"
+          (dismiss)="dismissTooltip()" />
       }
     </svg>
   `,
@@ -80,6 +106,64 @@ import { CircuitElement, Wire, Pin } from '../../../core';
        filter: drop-shadow(0 0 6px rgba(59, 130, 246, 0.8));
        stroke: #3b82f6 !important;
     }
+    ::ng-deep .connect-source > .gate-group > *:first-child {
+       filter: drop-shadow(0 0 10px rgba(99, 102, 241, 0.9));
+       stroke: #6366f1;
+       stroke-width: 2.5;
+       animation: pulse-source 1.5s ease-in-out infinite;
+    }
+    ::ng-deep .connect-target > .gate-group > *:first-child {
+       stroke: #a5b4fc;
+       stroke-width: 1.5;
+       stroke-dasharray: 4 2;
+    }
+    @keyframes pulse-source {
+      0%, 100% { filter: drop-shadow(0 0 8px rgba(99, 102, 241, 0.7)); }
+      50% { filter: drop-shadow(0 0 14px rgba(99, 102, 241, 1)); }
+    }
+
+    .connect-banner {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 6px 14px;
+      background: rgba(99, 102, 241, 0.92);
+      backdrop-filter: blur(12px);
+      -webkit-backdrop-filter: blur(12px);
+      color: white;
+      border-radius: 10px;
+      font-family: 'Inter', system-ui, -apple-system, sans-serif;
+      font-size: 12px;
+      font-weight: 500;
+      box-shadow: 0 4px 16px rgba(99, 102, 241, 0.3);
+      animation: slideDown 0.2s ease forwards;
+      pointer-events: auto;
+    }
+
+    @keyframes slideDown {
+      from { opacity: 0; transform: translateY(-6px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+
+    .cancel-btn {
+      background: rgba(255,255,255,0.25);
+      border: none;
+      color: white;
+      width: 24px;
+      height: 24px;
+      border-radius: 50%;
+      cursor: pointer;
+      font-size: 12px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-shrink: 0;
+      margin-left: 8px;
+      touch-action: manipulation;
+    }
+    .cancel-btn:hover {
+      background: rgba(255,255,255,0.4);
+    }
   `
 })
 export class BoardComponent implements OnInit {
@@ -87,6 +171,7 @@ export class BoardComponent implements OnInit {
   private hostEl = inject(ElementRef);
 
   boardTap = output<{x: number, y: number}>();
+  interactionMode = input<InteractionMode>('add');
 
   elements = this.simulator.elements;
   wires = this.simulator.wires;
@@ -111,12 +196,24 @@ export class BoardComponent implements OnInit {
   private draggingElement = signal<CircuitElement | null>(null);
   private hasDragged = false;
   
-  private longPressTimer: any = null;
+  private longPressTimer: ReturnType<typeof setTimeout> | null = null;
 
   selectedPinToConnect = signal<Pin | null>(null);
   drawingWire = signal<Wire | null>(null);
   private startDrawingPin: Pin | null = null;
   private currentMousePos = signal<{x: number, y: number}>({x:0, y:0});
+
+  // --- Tooltip State ---
+  tooltipState = signal<TooltipState | null>(null);
+
+  // --- Connection mode state ---
+  connectSourceId = signal<string | null>(null);
+  connectSourceName = computed(() => {
+    const id = this.connectSourceId();
+    if (!id) return '';
+    const el = this.elements().find(e => e.id === id);
+    return el?.name || el?.type || 'Component';
+  });
 
   private svgElement: SVGSVGElement | null = null;
   private isPanning = false;
@@ -242,6 +339,153 @@ export class BoardComponent implements OnInit {
     return this.svgElement;
   }
 
+  // --- Tooltip Helpers ---
+
+  private getGateCenter(el: CircuitElement): { x: number; y: number } {
+    const isIO = el.type === 'INPUT' || el.type === 'OUTPUT';
+    const w = isIO ? 40 : 60;
+    const h = 40;
+    const pos = el.position || { x: 0, y: 0 };
+    return { x: pos.x + w / 2, y: pos.y };
+  }
+
+  private getWireCenter(wire: Wire): { x: number; y: number } {
+    const start = this.getPinAbsolutePosition(wire.sourcePinId);
+    const end = this.getPinAbsolutePosition(wire.targetPinId);
+    return { x: (start.x + end.x) / 2, y: (start.y + end.y) / 2 };
+  }
+
+  private buildGateActions(el: CircuitElement): TooltipAction[] {
+    const actions: TooltipAction[] = [
+      { id: 'connect', label: 'Connect', icon: '🔗', variant: 'primary' },
+    ];
+    if (el.type === 'INPUT') {
+      actions.push({ id: 'toggle', label: 'Toggle', icon: '⚡', variant: 'default' });
+    }
+    actions.push(
+      { id: 'rename', label: 'Rename', icon: '✏️', variant: 'default' },
+      { id: 'delete', label: 'Delete', icon: '🗑', variant: 'danger' },
+    );
+    return actions;
+  }
+
+  private showGateTooltip(el: CircuitElement) {
+    const pos = this.getGateCenter(el);
+    this.tooltipState.set({
+      type: 'gate',
+      targetId: el.id,
+      position: pos,
+      actions: this.buildGateActions(el),
+    });
+  }
+
+  private showWireTooltip(w: Wire) {
+    const pos = this.getWireCenter(w);
+    this.tooltipState.set({
+      type: 'wire',
+      targetId: w.id,
+      position: pos,
+      actions: [
+        { id: 'delete', label: 'Delete', icon: '🗑', variant: 'danger' },
+      ],
+    });
+  }
+
+  dismissTooltip() {
+    this.tooltipState.set(null);
+  }
+
+  onTooltipAction(actionId: string) {
+    const state = this.tooltipState();
+    if (!state) return;
+
+    if (state.type === 'gate') {
+      const el = this.elements().find(e => e.id === state.targetId);
+      if (!el) { this.dismissTooltip(); return; }
+
+      switch (actionId) {
+        case 'connect':
+          this.dismissTooltip();
+          this.connectSourceId.set(el.id);
+          break;
+        case 'toggle':
+          if (el.type === 'INPUT') this.simulator.toggleInput(el.id);
+          this.dismissTooltip();
+          break;
+        case 'rename':
+          this.dismissTooltip();
+          this.triggerGateRename(el);
+          break;
+        case 'delete':
+          this.dismissTooltip();
+          this.simulator.removeElement(el.id);
+          break;
+      }
+    } else if (state.type === 'wire') {
+      if (actionId === 'delete') {
+        this.simulator.removeWire(state.targetId);
+        this.dismissTooltip();
+      }
+    }
+  }
+
+  // --- Auto-Connect Logic ---
+
+  /**
+   * Given a source element, find its first available output pin.
+   * "Available" = has no wire connected from it yet.
+   */
+  private findFirstFreeOutput(el: CircuitElement): Pin | null {
+    const wires = this.wires();
+    for (const pin of el.outputs) {
+      const isUsed = wires.some(w => w.sourcePinId === pin.id);
+      if (!isUsed) return pin;
+    }
+    // If all used, return the first output anyway to allow fan-out
+    return el.outputs.length > 0 ? el.outputs[0] : null;
+  }
+
+  /**
+   * Given a target element, find its first available (unconnected) input pin.
+   */
+  private findFirstFreeInput(el: CircuitElement): Pin | null {
+    const wires = this.wires();
+    for (const pin of el.inputs) {
+      const isUsed = wires.some(w => w.targetPinId === pin.id);
+      if (!isUsed) return pin;
+    }
+    return null; // All inputs occupied
+  }
+
+  private tryAutoConnect(targetEl: CircuitElement) {
+    const sourceId = this.connectSourceId();
+    if (!sourceId) return;
+
+    const sourceEl = this.elements().find(e => e.id === sourceId);
+    if (!sourceEl) { this.cancelConnection(); return; }
+
+    const outPin = this.findFirstFreeOutput(sourceEl);
+    const inPin = this.findFirstFreeInput(targetEl);
+
+    if (outPin && inPin) {
+      this.simulator.addWire({
+        id: crypto.randomUUID(),
+        sourcePinId: outPin.id,
+        targetPinId: inPin.id,
+        value: outPin.value,
+      });
+    }
+    this.cancelConnection();
+  }
+
+  cancelConnection(e?: Event) {
+    if (e) {
+      e.preventDefault();
+      e.stopPropagation();
+    }
+    this.connectSourceId.set(null);
+  }
+
   // --- Zoom, Pan & Click ---
 
   onWheel(e: WheelEvent) {
@@ -254,7 +498,7 @@ export class BoardComponent implements OnInit {
       
       currentZoom = Math.max(0.2, Math.min(currentZoom, 5));
       
-      const target = this.getMouseSVGPoint(e as any);
+      const target = this.getMouseSVGPoint(e as unknown as MouseEvent);
       this.zoom.set(currentZoom);
       
       const rX = e.offsetX / this.boardWidth();
@@ -275,18 +519,37 @@ export class BoardComponent implements OnInit {
     } else if (e.button === 0) {
       if (e.target === this.getSvgElement() || (e.target as Element).tagName === 'rect') {
         this.simulator.clearSelection();
+        this.dismissTooltip();
+        this.cancelConnection();
       }
     }
   }
 
-  onGateClick(e: MouseEvent, id: string) {
+  onGateClick(e: MouseEvent, el: CircuitElement) {
     e.stopPropagation();
-    this.simulator.toggleSelection(id, e.shiftKey);
+
+    // In connect mode on mobile, if there's a connection source, auto-connect
+    if (this.connectSourceId() && this.connectSourceId() !== el.id) {
+      this.tryAutoConnect(el);
+      return;
+    }
+
+    // Desktop behavior: toggle selection
+    if (this.interactionMode() === 'add') {
+      this.simulator.toggleSelection(el.id, e.shiftKey);
+    } else {
+      // Connect mode desktop: show tooltip
+      this.showGateTooltip(el);
+    }
   }
 
-  onWireClick(e: MouseEvent, id: string) {
+  onWireClick(e: MouseEvent, wire: Wire) {
     e.stopPropagation();
-    this.simulator.toggleSelection(id, e.shiftKey);
+    if (this.interactionMode() === 'connect') {
+      this.showWireTooltip(wire);
+    } else {
+      this.simulator.toggleSelection(wire.id, e.shiftKey);
+    }
   }
 
   onWireDoubleClick(e: MouseEvent, id: string) {
@@ -321,6 +584,19 @@ export class BoardComponent implements OnInit {
 
   onGateTouchStart(e: TouchEvent, el: CircuitElement) {
     e.stopPropagation();
+
+    // In connect mode, don't start drag — we want taps to trigger tooltips/connections
+    if (this.interactionMode() === 'connect') {
+      // Don't drag, just record for tap detection
+      this.hasDragged = false;
+      this.draggingElement.set(el);
+      const touch = e.touches[0];
+      this.lastMousePoint = this.getTouchSVGPoint(touch.clientX, touch.clientY);
+      this.touchDownTime = Date.now();
+      return;
+    }
+
+    // Add mode: normal drag behavior
     this.hasDragged = false;
     this.draggingElement.set(el);
     const touch = e.touches[0];
@@ -356,6 +632,9 @@ export class BoardComponent implements OnInit {
   // --- Wiring ---
 
   startWire(pin: Pin) {
+    // In connect mode, don't start pin-level wiring on mobile
+    if (this.interactionMode() === 'connect') return;
+
     const current = this.selectedPinToConnect();
     
     if (current) {
@@ -492,6 +771,11 @@ export class BoardComponent implements OnInit {
       return;
     }
 
+    // In connect mode, don't drag gates
+    if (this.interactionMode() === 'connect') {
+      return;
+    }
+
     if (this.draggingElement()) {
       e.preventDefault();
       const touch = e.touches[0];
@@ -532,6 +816,46 @@ export class BoardComponent implements OnInit {
     const isTap = !this.hasDragged && duration < 300;
 
     const el = this.draggingElement();
+
+    // Connect mode touch logic
+    if (this.interactionMode() === 'connect') {
+      if (el && isTap) {
+        // Tapped on a gate in connect mode
+        if (this.connectSourceId()) {
+          // We have a source selected — try to connect
+          if (this.connectSourceId() !== el.id) {
+            this.tryAutoConnect(el);
+          } else {
+            // Tapped same element — cancel connection
+            this.cancelConnection();
+          }
+        } else {
+          // No source yet — show tooltip
+          this.showGateTooltip(el);
+        }
+        this.draggingElement.set(null);
+        return;
+      }
+      
+      this.draggingElement.set(null);
+
+      // Tap on empty board in connect mode
+      if (!el && isTap && e.changedTouches[0]) {
+        const touch = e.changedTouches[0];
+        // Check if we tapped a wire
+        const maybeWire = this.findWireAtPoint(touch.clientX, touch.clientY);
+        if (maybeWire) {
+          this.showWireTooltip(maybeWire);
+          return;
+        }
+        // Dismiss tooltip / cancel connection on empty tap
+        this.dismissTooltip();
+        this.cancelConnection();
+      }
+      return;
+    }
+
+    // Add mode touch logic (original)
     if (el) {
       if (isTap && el.type === 'INPUT') {
         this.simulator.toggleInput(el.id);
@@ -609,6 +933,27 @@ export class BoardComponent implements OnInit {
       }
     }
     return closestPin;
+  }
+
+  /**
+   * Find a wire near a touch point by checking distance to wire path midpoints.
+   */
+  private findWireAtPoint(clientX: number, clientY: number, hitRadius: number = 25): Wire | null {
+    const svgP = this.getTouchSVGPoint(clientX, clientY);
+    let closest: Wire | null = null;
+    let minDistSq = hitRadius * hitRadius;
+
+    for (const w of this.wires()) {
+      const mid = this.getWireCenter(w);
+      const dx = svgP.x - mid.x;
+      const dy = svgP.y - mid.y;
+      const dSq = dx * dx + dy * dy;
+      if (dSq < minDistSq) {
+        closest = w;
+        minDistSq = dSq;
+      }
+    }
+    return closest;
   }
 
   private cancelWire() {
